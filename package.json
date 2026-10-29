@@ -11,7 +11,11 @@
     "db:generate": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs generate",
     "db:migrate": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs migrate",
     "db:studio": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs studio",
-    "seed": "node --env-file=.env.local --import tsx scripts/seed.ts"
+    "seed": "node --env-file=.env.local --import tsx scripts/seed.ts",
+    "companies:detect": "node --env-file=.env.local --import tsx scripts/companies-detect.ts",
+    "companies:add": "node --env-file=.env.local --import tsx scripts/companies-add.ts",
+    "tick:dry": "node --env-file=.env.local --import tsx scripts/tick-dry.ts",
+    "tick:local": "node --env-file=.env.local --import tsx scripts/tick-local.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",
