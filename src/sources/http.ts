@@ -30,7 +30,9 @@ export async function getJson(url: string): Promise<JsonResponse> {
       try {
         data = JSON.parse(text);
       } catch {
-        throw new SourceError(`HTTP ${res.status}: body is not JSON`, res.status);
+        // Error pages (e.g. Ashby 404) are plain text; only a 2xx must be JSON.
+        if (res.ok) throw new SourceError(`HTTP ${res.status}: body is not JSON`, res.status);
+        data = null;
       }
     }
     return { status: res.status, data };
