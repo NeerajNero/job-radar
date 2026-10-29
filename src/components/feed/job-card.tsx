@@ -4,7 +4,7 @@ import { Copy, ExternalLink, Megaphone, MoreHorizontal, Users } from "lucide-rea
 import { useState, useTransition } from "react";
 import { setJobStatusAction } from "@/app/(app)/jobs/actions";
 import type { JobStatus } from "@/db/schema";
-import { STATUS_LABELS } from "@/lib/jobs";
+import { STATUS_LABELS } from "@/lib/job-status";
 import { Menu } from "../menu";
 import { copyText, useToast } from "../toast";
 import { PRIORITY_DOT, STATUS_PILL, btnPrimary, btnSecondary, card, muted, pill } from "../ui";

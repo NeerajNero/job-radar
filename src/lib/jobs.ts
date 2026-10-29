@@ -4,18 +4,7 @@ import { db } from "@/db";
 import { jobs, type JobStatus } from "@/db/schema";
 import { followUpDate } from "./dates";
 
-export const ACTIONABLE_STATUSES: JobStatus[] = ["applied", "referral_asked", "replied", "interviewing", "rejected", "offer"];
-
-export const STATUS_LABELS: Record<JobStatus, string> = {
-  new: "New",
-  ignored: "Ignored",
-  applied: "Applied",
-  referral_asked: "Referral asked",
-  replied: "Replied",
-  interviewing: "Interviewing",
-  rejected: "Rejected",
-  offer: "Offer",
-};
+export { ACTIONABLE_STATUSES, STATUS_LABELS } from "./job-status";
 
 /**
  * Set a job's status. Marking applied (for the first time) also stamps applied_at and schedules

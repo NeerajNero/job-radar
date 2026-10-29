@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { setJobStatusAction, updateJobFieldsAction } from "@/app/(app)/jobs/actions";
 import type { JobStatus } from "@/db/schema";
-import { ACTIONABLE_STATUSES, STATUS_LABELS } from "@/lib/jobs";
+import { ACTIONABLE_STATUSES, STATUS_LABELS } from "@/lib/job-status";
 import { useToast } from "../toast";
 import { input } from "../ui";
 
