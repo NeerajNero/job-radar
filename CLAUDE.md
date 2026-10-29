@@ -27,7 +27,8 @@ Exactly one user (me). Total running cost must stay ₹0. Timebox: one working d
 - `/login` page with one passcode field. POST compares against `APP_PASSCODE` (constant-time), on
   success sets an HttpOnly, Secure, SameSite=Lax cookie holding an HMAC-signed token (secret
   `AUTH_SECRET`, 30-day expiry).
-- `middleware.ts` protects every route except `/login`, `/api/telegram` and `/api/tick`.
+- `src/proxy.ts` (the Next 16 name for middleware) protects every route except `/login`,
+  `/api/telegram` and `/api/tick*` (including `/api/tick/latest`).
 - `/api/telegram` is protected by Telegram's `X-Telegram-Bot-Api-Secret-Token` header matching
   `TELEGRAM_WEBHOOK_SECRET`. `/api/tick` is protected by header `x-tick-secret` matching `TICK_SECRET`.
 
@@ -61,7 +62,8 @@ Before writing an adapter, curl the live endpoint for one real board and confirm
 against the response; the lists above are expectations, not guarantees. Parse with Zod using
 `.passthrough()` and tolerate missing optional fields.
 
-Fetch rules: 12 s timeout per board, `User-Agent: job-radar/1.0 (personal use)`, one failing board
+Fetch rules: per-source timeout (Greenhouse and Ashby 12 s, Lever 25 s because its API is slow),
+`User-Agent: job-radar/1.0 (personal use)`, one failing board
 never aborts the run, each result records `last_fetched_at`, `last_fetch_status` and
 `last_fetch_error` on the company row. After 3 consecutive failures a company is skipped for 6 hours.
 
@@ -84,7 +86,8 @@ Unique (ats, slug).
 **jobs** — id, company_id (fk), source, external_id, title, location, is_remote, url, apply_url,
 posted_at (nullable), first_seen_at, last_seen_at, is_open (bool, false when a board stops listing it),
 description_text, match_score (int), matched_keywords (text[]), location_match
-(enum explicit|remote|unknown|none),
+(enum explicit|remote|unknown|none), ignore_reason (enum title|location|age|manual, nullable;
+set by evaluate() with precedence title > location > age; `manual` when I ignore by hand),
 status (enum new|ignored|applied|referral_asked|replied|interviewing|rejected|offer, default new),
 status_changed_at, applied_at (nullable), referrer_name, notes, next_action, next_action_date (date),
 notified_at (nullable), created_at, updated_at.
@@ -92,57 +95,72 @@ Unique (source, external_id). Indexes on (status), (posted_at), (next_action_dat
 
 **settings** — single row id=1, explicit columns, no JSON blob: title_include (text[]),
 title_exclude (text[]), description_boost (text[]), locations (text[]), include_remote (bool),
-include_unknown_location (bool default true), max_age_days (int default 3), min_notify_score (int
+include_unknown_location (bool default true), max_age_days (int, seeded 7), min_notify_score (int
 default 2), telegram_chat_id (nullable), quiet_start (time default 22:00), quiet_end (time default
 08:00), digest_time (time default 08:30), my_name, my_portfolio_url, my_availability_line, my_stack_line.
 
 **tick_runs** — id, started_at, finished_at, companies_fetched, jobs_new, jobs_notified, errors (text),
 so the Settings page can show the last run.
 
+**messages_sent** — id, sent_at, kind (enum alert|digest|reply|held), job_id (nullable fk), chat_id.
+Backs the daily cap, the digest-sent-today check and the quiet-hours hold.
+
 ## Matching and scoring (pure functions in `src/lib/match.ts`, unit-testable by hand via tick:dry)
 Title matching is whole-word, case-insensitive. Defaults, all editable in Settings:
 - title_include: full stack, fullstack, full-stack, backend, back-end, software engineer, software
-  developer, sde, node, nodejs, node.js, nestjs, next.js, nextjs, react, typescript, javascript, web developer
+  developer, sde, node, nodejs, node.js, nestjs, next.js, nextjs, react, typescript, javascript, web developer,
+  frontend, front-end, product engineer, member of technical staff, mts
 - title_exclude: intern, internship, manager, director, principal, staff, architect, vp, head of,
   react native, android, ios, flutter, qa, test, sdet, devops, sre, data, ml, machine learning, ai
-  engineer, php, .net, c#, golang, go engineer, python, java engineer, ruby, rails, salesforce, sap
+  engineer, php, .net, c#, golang, go engineer, python, java engineer, ruby, rails, salesforce, sap,
+  new grad, graduate, fresher, trainee, entry level, junior, associate
 - description_boost: nestjs, next.js, postgresql, postgres, prisma, drizzle, redis, bullmq, aws,
   docker, graphql, openai
-- locations: bengaluru, bangalore, india; include_remote true.
+- locations: bengaluru, bangalore, india; include_remote true; max_age_days 7.
 
 A job is a match when: title hits ≥1 include term AND 0 exclude terms; AND location_match is
 explicit (location contains a locations term), remote (isRemote or location contains "remote" and
 include_remote), or unknown (no location given and include_unknown_location); AND age ≤ max_age_days
 where age uses posted_at, else first_seen_at.
 
-Score: +3 title has full stack/fullstack/full-stack; +2 title has node/nestjs/next; +1 title has
-react/typescript; +1 per description_boost hit, capped at +3; +2 if company priority 1, +1 if 2;
-+1 if location_match explicit; −1 if unknown. Store matched_keywords for display. Non-matches are
-still stored (status ignored, score 0) so a board's full state is known and nothing re-surfaces.
+Score: +3 title has full stack/fullstack/full-stack; +2 title has node/nodejs/node.js/nestjs/next/
+next.js/nextjs; +1 title has react/typescript; +1 per description_boost hit, capped at +3; +2 if
+company priority 1, +1 if 2; +1 if location_match explicit; −1 if unknown. Store matched_keywords
+for display. Non-matches are still stored (status ignored, score 0, ignore_reason set) so a board's
+full state is known and nothing re-surfaces.
+
+Re-evaluation (`pnpm reevaluate`, Settings → Re-evaluate): re-runs evaluate() on open jobs first
+seen in the last 30 days with status new or ignored and ignore_reason ≠ manual, in batches of 200,
+writing only changed rows. `--all` lifts both bounds. Jobs I acted on are never touched.
 
 ## Screens (three tabs: Feed, Tracker, Settings)
 
 **Feed (`/`)** — default view is status=new sorted by score desc then posted_at desc; chips to switch
-to Applied, Referral asked, All open. Each card: company name + priority dot, title, location,
+to Applied, Referral asked (both sorted by status_changed_at desc), All open (status ≠ ignored and
+is_open) and Older matches (ignore_reason=age, is_open, posted_at within 30 days, posted_at desc).
+`/?job=<id>` (the "Open in app" link from Telegram) pins that job at the top, scrolls to it and
+highlights it. Each card: company name + priority dot, title, location,
 "posted 3h ago", score badge, matched keyword pills. Actions on the card:
 - **Apply** → opens apply_url in a new tab.
 - **Find referrer** → opens `https://www.linkedin.com/search/results/people/?keywords=<company>%20software%20engineer`.
 - **Hiring posts** → opens `https://www.linkedin.com/search/results/content/?keywords=<company>%20hiring&sortBy=%22date_posted%22`.
 - **Copy message** → menu with three templates (referral, recruiter, hiring manager); copies the
   filled text to the clipboard and shows a toast.
-- **Mark** → applied / referral asked / ignore. Marking applied sets applied_at = now and
-  next_action = "follow up", next_action_date = +3 working days.
+- **Mark** → applied / referral asked / ignore. Marking applied (first time) sets applied_at = now and
+  next_action = "follow up", next_action_date = +3 working days (IST). Ignore sets ignore_reason=manual.
 Long-press or a ⋯ menu opens the full description inline (no new page).
 
 **Tracker (`/tracker`)** — table of jobs whose status is not new/ignored. Columns: company, title,
 status (dropdown, inline), applied date, referrer, next action + date, notes (inline edit, autosave).
-Sorted by next_action_date asc; overdue rows tinted. A funnel strip at the top: new → applied →
-referral asked → replied → interviewing → offer, with counts.
+Sorted by next_action_date asc; overdue rows tinted. Horizontal scroll on phone width. A funnel strip
+at the top: new → applied → referral asked → replied → interviewing → offer, with counts.
 
 **Settings (`/settings`)** — companies table (name, ATS, slug, priority, active toggle, last fetch
 status, "Test fetch" button that runs one adapter and shows the count); add-company form; the
 keyword/location/age/score fields; my_* fields used by templates; Telegram pairing status;
-"Run tick now" button; last 5 tick_runs.
+"Run tick now" button (synchronous, inserts its own tick_runs row); "Re-evaluate open jobs" button;
+last 5 tick_runs. Telegram status shows the chat id masked except the last 3 digits, today's
+capped-message count, held alerts and the last digest.
 
 Design: Tailwind only, mobile-first at 412 px, max-w-screen-md centred on desktop, dark mode via
 `prefers-color-scheme`, tap targets ≥ 44 px, no emoji in the UI chrome.
@@ -176,15 +194,18 @@ NestJS, TypeScript, PostgreSQL".
   and reply "paired". Any message from an unpaired or different chat gets "not for you" and nothing else.
 - Commands: `/new` (today's new matches, top 10 by score), `/due` (follow-ups due today or overdue),
   `/stats` (funnel counts), `/tick` (runs the tick, replies with the summary).
-- New-job alerts, sent from the tick: one message per job with score ≥ min_notify_score and
-  notified_at null, at most 10 per tick (the rest: "and N more in the app"). Format:
+- New-job alerts, sent from the tick: one message per open job with status new, score ≥
+  min_notify_score and notified_at null, at most 10 per tick (the rest: "and N more in the app"). Format:
   `{company} · {title}` / `{location} · posted 2h ago · score 5` / links: Apply, Find referrer, Open in
   app. Inline buttons: Applied · Referral asked · Ignore, each updating status and editing the message
   to show the result. Set notified_at on send.
 - Daily digest at digest_time: new matches since yesterday's digest, follow-ups due today,
   applications with no reply after 3 working days ("chase"), and the funnel line.
-- Quiet hours: nothing is sent between quiet_start and quiet_end IST; held alerts go out at quiet_end.
-- Hard cap 25 messages per day across everything.
+- Quiet hours: nothing is sent between quiet_start and quiet_end IST; held alerts are recorded in
+  messages_sent (kind held, once per job) and go out at the first tick at or after quiet_end.
+- Hard cap 25 messages per day (IST) counting alerts and the digest. Replies to my own commands,
+  button edits and "not for you" replies to strangers are exempt. The command list is registered
+  with Telegram by `bot:dev` and `bot:set-webhook`.
 
 ## Tick (`/api/tick`)
 1. Load settings. Pick active companies not in failure cooldown, ordered by last_fetched_at asc
@@ -194,10 +215,14 @@ NestJS, TypeScript, PostgreSQL".
    the response get is_open=false. Update the company's fetch columns.
 3. Score every newly inserted job; non-matches become status=ignored, score 0.
 4. Send Telegram alerts per the rules above, then the digest if due and not yet sent today.
-5. Write a tick_runs row. Respond with JSON `{ fetched, new, notified, errors }`.
-Set the route's `maxDuration` to the plan maximum and keep a run under ~50 s by the batching above.
+5. Complete the tick_runs row (finished_at, counts, errors).
+The route validates the secret, inserts the tick_runs row with started_at, responds `202 { runId }`
+at once and runs steps 1–5 inside `after()` from next/server; `maxDuration` is 60 on `/api/tick` and
+`/api/telegram`, and the batching above keeps a run under ~50 s. GET and POST both trigger it.
+`GET /api/tick/latest` behind the same header returns the most recent tick_runs row.
 `pnpm tick:dry` runs steps 1–3 locally against the database without writing or sending and prints
-the would-be matches as a table; `pnpm tick:prod` calls the deployed route with the secret.
+the would-be matches as a table; `pnpm tick:prod` POSTs the deployed route with the secret (prints
+only the host, asks y/N), polls `latest` every 3 s for up to 90 s and prints the summary.
 
 ## Seed data
 Settings row with the defaults above. Companies: none hard-coded — I add my 30–50 targets through
