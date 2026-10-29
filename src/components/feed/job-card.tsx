@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, ExternalLink, Megaphone, MoreHorizontal, Users } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { setJobStatusAction } from "@/app/(app)/jobs/actions";
 import type { JobStatus } from "@/db/schema";
 import { STATUS_LABELS } from "@/lib/job-status";
@@ -28,10 +28,15 @@ export type FeedCard = {
   templates: Array<{ kind: string; label: string; text: string }>;
 };
 
-export function JobCard({ job }: { job: FeedCard }) {
+export function JobCard({ job, highlighted = false }: { job: FeedCard; highlighted?: boolean }) {
   const toast = useToast();
   const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (highlighted) ref.current?.scrollIntoView({ block: "center" });
+  }, [highlighted]);
 
   function mark(status: JobStatus) {
     startTransition(async () => {
@@ -46,7 +51,12 @@ export function JobCard({ job }: { job: FeedCard }) {
   }
 
   return (
-    <article className={`${card} ${pending ? "opacity-60" : ""}`} aria-busy={pending}>
+    <article
+      ref={ref}
+      id={`job-${job.id}`}
+      className={`${card} ${pending ? "opacity-60" : ""} ${highlighted ? "ring-2 ring-amber-400 dark:ring-amber-500" : ""}`}
+      aria-busy={pending}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm">

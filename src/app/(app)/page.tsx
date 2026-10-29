@@ -27,6 +27,7 @@ const OLDER_WINDOW_DAYS = 30;
 export default async function FeedPage({ searchParams }: PageProps<"/">) {
   const sp = await searchParams;
   const view: ViewKey = VIEWS.some((v) => v.key === sp.view) ? (sp.view as ViewKey) : "new";
+  const highlightId = typeof sp.job === "string" && /^\d+$/.test(sp.job) ? Number(sp.job) : null;
   const now = new Date();
   const olderCutoff = new Date(now.getTime() - OLDER_WINDOW_DAYS * 86_400_000);
 
@@ -59,6 +60,16 @@ export default async function FeedPage({ searchParams }: PageProps<"/">) {
     db.select({ n: count() }).from(jobs).where(openWhere),
     db.select({ n: count() }).from(jobs).where(olderWhere),
   ]);
+  // "Open in app" from a Telegram alert: make sure that job is on the page even if its status
+  // moved it out of the current view, then scroll to and highlight it.
+  if (highlightId !== null && !rows.some((r) => r.job.id === highlightId)) {
+    const [pinned] = await db
+      .select({ job: jobs, company: companies.name, priority: companies.priority })
+      .from(jobs)
+      .innerJoin(companies, eq(companies.id, jobs.companyId))
+      .where(eq(jobs.id, highlightId));
+    if (pinned) rows.unshift(pinned);
+  }
   const byStatus = Object.fromEntries(statusCounts.map((r) => [r.status, r.n]));
   const counts: Record<ViewKey, number> = {
     new: byStatus.new ?? 0,
@@ -121,7 +132,7 @@ export default async function FeedPage({ searchParams }: PageProps<"/">) {
         <ul className="mt-3 flex flex-col gap-3">
           {cards.map((c) => (
             <li key={c.id}>
-              <JobCard job={c} />
+              <JobCard job={c} highlighted={c.id === highlightId} />
             </li>
           ))}
         </ul>

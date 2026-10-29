@@ -1,12 +1,13 @@
 /**
  * The hourly tick: fetch boards, upsert jobs, score new ones, record the run.
- * Steps 1–3 and 5 of CLAUDE.md "Tick". Step 4 (Telegram) is a no-op hook until Phase 4.
+ * Steps 1–5 of CLAUDE.md "Tick"; step 4 (Telegram) lives in notify.ts.
  */
 import { and, eq, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { companies, jobs, tickRuns, type Company, type NewJob, type Settings } from "@/db/schema";
 import { getSource, type NormalizedJob } from "@/sources";
 import { evaluate } from "./match";
+import { sendDigestIfDue, sendNewJobAlerts } from "./notify";
 import { loadSettings } from "./settings";
 
 export const MAX_COMPANIES_PER_RUN = 40;
@@ -212,20 +213,24 @@ async function processCompany(
   return { ...base, ok: true, listed: listed.length, inserted: rows.length, closed: toClose.length, matched };
 }
 
-/* ------------------------------------------------------------------------------------------ */
-/* PHASE 4 HOOK — Telegram alerts (Tick step 4). Deliberately a no-op in Phase 2.              */
-/* Phase 4 replaces the body: alerts for matches with score ≥ min_notify_score and            */
-/* notified_at null (max 10), then the digest if due, honouring quiet hours and the daily cap. */
-/* Must return the number of alerts actually sent.                                            */
-/* ------------------------------------------------------------------------------------------ */
-async function sendAlerts(ctx: {
-  settings: Settings;
-  matches: TickMatch[];
-  now: Date;
-  dryRun: boolean;
-}): Promise<number> {
-  void ctx; // unused until Phase 4
-  return 0;
+/**
+ * Tick step 4: Telegram alerts, then the digest if due. Never fails the tick; errors are reported.
+ * Returns the number of job alerts sent (the digest is not a job notification).
+ */
+async function sendAlerts(ctx: { now: Date; dryRun: boolean; log: (line: string) => void; errors: string[] }): Promise<number> {
+  if (ctx.dryRun) return 0;
+  let notified = 0;
+  try {
+    notified = (await sendNewJobAlerts(ctx.now, ctx.log)).sent;
+  } catch (err) {
+    ctx.errors.push(`telegram alerts: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  try {
+    await sendDigestIfDue(ctx.now, ctx.log);
+  } catch (err) {
+    ctx.errors.push(`telegram digest: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return notified;
 }
 
 export async function runTick(options: TickOptions = {}): Promise<TickResult> {
@@ -273,7 +278,7 @@ export async function runTick(options: TickOptions = {}): Promise<TickResult> {
 
   const errors = results.filter((r) => !r.ok).map((r) => `${r.name}: ${r.error}`);
   const jobsNew = results.reduce((n, r) => n + r.inserted, 0);
-  const notified = await sendAlerts({ settings, matches, now, dryRun });
+  const notified = await sendAlerts({ now, dryRun, log, errors });
 
   if (!dryRun) {
     await db.insert(tickRuns).values({

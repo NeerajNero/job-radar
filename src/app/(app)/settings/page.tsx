@@ -9,6 +9,7 @@ import { card, muted, sectionTitle } from "@/components/ui";
 import { db } from "@/db";
 import { companies, tickRuns } from "@/db/schema";
 import { fmtIst } from "@/lib/dates";
+import { DAILY_CAP, maskChatId, telegramStatus } from "@/lib/messaging";
 import { loadSettings } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -21,6 +22,7 @@ export default async function SettingsPage() {
     db.select().from(companies).orderBy(companies.priority, companies.name),
     db.select().from(tickRuns).orderBy(desc(tickRuns.id)).limit(5),
   ]);
+  const telegramToday = settings.telegramChatId ? await telegramStatus(settings.telegramChatId) : { sent: 0, held: 0, lastDigest: null };
 
   const rows: CompanyRow[] = companyRows.map((c) => ({
     id: c.id,
@@ -77,11 +79,19 @@ export default async function SettingsPage() {
         </h2>
         <p className="mt-2 text-sm">
           {settings.telegramChatId ? (
-            <span className="text-emerald-700 dark:text-emerald-400">Paired (chat {settings.telegramChatId}).</span>
+            <span className="text-emerald-700 dark:text-emerald-400">Paired with chat {maskChatId(settings.telegramChatId)}.</span>
           ) : (
-            <span className={muted}>Not paired. Pairing arrives with the bot in Phase 4.</span>
+            <span className={muted}>Not paired. Send /start &lt;pair code&gt; to the bot.</span>
           )}
         </p>
+        {settings.telegramChatId ? (
+          <p className={`mt-1 text-sm ${muted}`}>
+            Messages today: {telegramToday.sent} of {DAILY_CAP}
+            {telegramToday.held ? ` · ${telegramToday.held} alert${telegramToday.held === 1 ? "" : "s"} held for quiet hours` : ""}
+            {telegramToday.lastDigest ? ` · last digest ${fmtIst(telegramToday.lastDigest)}` : ""}. Quiet {settings.quietStart.slice(0, 5)}–
+            {settings.quietEnd.slice(0, 5)} IST, digest at {settings.digestTime.slice(0, 5)} IST.
+          </p>
+        ) : null}
       </section>
 
       <section className={card} aria-labelledby="maintenance-h">

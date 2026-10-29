@@ -1,7 +1,7 @@
 /**
  * pnpm reevaluate [--all]
- * Re-runs evaluate() on open jobs with status new/ignored (never manual ignores or jobs acted on).
- * --all includes closed jobs too (backfills).
+ * Re-runs evaluate() on open jobs first seen in the last 30 days with status new/ignored (never
+ * manual ignores or jobs acted on), in batches of 200. --all lifts both bounds (backfills).
  */
 import { count, desc } from "drizzle-orm";
 import { db } from "../src/db";
@@ -12,7 +12,7 @@ import { printTable } from "./lib/table";
 async function main() {
   const includeClosed = process.argv.includes("--all");
   const r = await reevaluateJobs({ includeClosed });
-  console.log(`reevaluate${includeClosed ? " (all)" : ""}: scanned=${r.scanned} changed=${r.changed} (${(r.durationMs / 1000).toFixed(1)}s)`);
+  console.log(`reevaluate${includeClosed ? " (all)" : ""}: scanned=${r.scanned} changed=${r.changed} batches=${r.batches} (${(r.durationMs / 1000).toFixed(1)}s)`);
 
   const byStatus = await db.select({ status: jobs.status, count: count() }).from(jobs).groupBy(jobs.status).orderBy(desc(count()));
   console.log("\njobs by status:");

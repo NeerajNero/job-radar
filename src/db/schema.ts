@@ -29,6 +29,8 @@ export const locationMatchEnum = pgEnum("location_match", [
 
 export const ignoreReasonEnum = pgEnum("ignore_reason", ["title", "location", "age", "manual"]);
 
+export const messageKindEnum = pgEnum("message_kind", ["alert", "digest", "reply", "held"]);
+
 export const jobStatusEnum = pgEnum("job_status", [
   "new",
   "ignored",
@@ -151,6 +153,20 @@ export const tickRuns = pgTable("tick_runs", {
   errors: text("errors"),
 });
 
+// ---------- messages_sent (Telegram: daily cap, digest-sent-today, quiet-hours hold) ----------
+
+export const messagesSent = pgTable(
+  "messages_sent",
+  {
+    id: serial("id").primaryKey(),
+    sentAt: timestamp("sent_at", tz).notNull().defaultNow(),
+    kind: messageKindEnum("kind").notNull(),
+    jobId: integer("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    chatId: text("chat_id").notNull(),
+  },
+  (t) => [index("messages_sent_sent_at_idx").on(t.sentAt), index("messages_sent_job_id_idx").on(t.jobId)],
+);
+
 // ---------- inferred types ----------
 
 export type Company = typeof companies.$inferSelect;
@@ -163,3 +179,5 @@ export type JobStatus = (typeof jobStatusEnum.enumValues)[number];
 export type Ats = (typeof atsEnum.enumValues)[number];
 export type LocationMatch = (typeof locationMatchEnum.enumValues)[number];
 export type IgnoreReason = (typeof ignoreReasonEnum.enumValues)[number];
+export type MessageSent = typeof messagesSent.$inferSelect;
+export type MessageKind = (typeof messageKindEnum.enumValues)[number];
