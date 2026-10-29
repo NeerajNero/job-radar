@@ -86,7 +86,7 @@ export default async function SettingsPage() {
         </p>
         {settings.telegramChatId ? (
           <p className={`mt-1 text-sm ${muted}`}>
-            Messages today: {telegramToday.sent} of {DAILY_CAP}
+            Alerts and digests today: {telegramToday.sent} of {DAILY_CAP} (replies to your commands are not counted)
             {telegramToday.held ? ` · ${telegramToday.held} alert${telegramToday.held === 1 ? "" : "s"} held for quiet hours` : ""}
             {telegramToday.lastDigest ? ` · last digest ${fmtIst(telegramToday.lastDigest)}` : ""}. Quiet {settings.quietStart.slice(0, 5)}–
             {settings.quietEnd.slice(0, 5)} IST, digest at {settings.digestTime.slice(0, 5)} IST.

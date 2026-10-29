@@ -16,6 +16,7 @@
     "companies:add": "node --env-file=.env.local --import tsx scripts/companies-add.ts",
     "tick:dry": "node --env-file=.env.local --import tsx scripts/tick-dry.ts",
     "tick:local": "node --env-file=.env.local --import tsx scripts/tick-local.ts",
+    "tick:prod": "node --env-file=.env.local --import tsx scripts/tick-prod.ts",
     "reevaluate": "node --env-file=.env.local --import tsx scripts/reevaluate.ts",
     "bot:dev": "node --env-file=.env.local --import tsx scripts/bot-dev.ts",
     "bot:set-webhook": "node --env-file=.env.local --import tsx scripts/bot-set-webhook.ts",

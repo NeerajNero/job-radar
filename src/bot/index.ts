@@ -39,12 +39,11 @@ function startCode(text: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
-/** Reply to the paired chat within the daily cap, recording it as kind=reply. */
+/** Reply to the paired chat, recorded as kind=reply (replies to own commands are never capped). */
 async function reply(ctx: Context, html: string): Promise<boolean> {
   const chatId = String(ctx.chat?.id ?? "");
   const budget = await SendBudget.open(chatId);
   const r = await budget.send(html, { kind: "reply" });
-  if (!r.ok) console.warn(`bot: daily cap reached, reply dropped (chat ***${chatId.slice(-3)})`);
   return r.ok;
 }
 

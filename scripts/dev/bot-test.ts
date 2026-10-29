@@ -11,7 +11,7 @@ import { db } from "../../src/db";
 import { jobs, messagesSent, settings } from "../../src/db/schema";
 import { fromZonedTime } from "date-fns-tz";
 import { sendDigestIfDue, sendNewJobAlerts } from "../../src/lib/notify";
-import { IST } from "../../src/lib/dates";
+import { IST, todayIst } from "../../src/lib/dates";
 
 const CHAT = 123456789;
 const STRANGER = 999000111;
@@ -147,12 +147,15 @@ async function main() {
   show(sent(m)[0]);
 
   // 8. daily cap
-  const today = new Date();
-  await db.insert(messagesSent).values(Array.from({ length: 25 }, () => ({ chatId: String(CHAT), kind: "reply" as const, sentAt: today })));
+  const today = ist("12:00", todayIst());
+  await db.insert(messagesSent).values(Array.from({ length: 25 }, () => ({ chatId: String(CHAT), kind: "alert" as const, sentAt: today })));
+  await db.delete(messagesSent).where(and(eq(messagesSent.chatId, String(CHAT)), eq(messagesSent.kind, "digest")));
+  await db.update(jobs).set({ notifiedAt: null, status: "new" }).where(eq(jobs.id, quietJob));
   m = calls.length;
   await bot.handleUpdate(msg(CHAT, "/stats"));
   const capAlerts = await sendNewJobAlerts(today);
-  check("25 messages today → /stats reply and alerts both dropped", sent(m).length === 0 && capAlerts.sent === 0);
+  const capDigest = await sendDigestIfDue(today);
+  check("25 alerts today → /stats reply still sent, alerts and digest dropped", sent(m).length === 1 && capAlerts.sent === 0 && !capDigest.sent && capDigest.reason === "daily cap reached", `${sent(m).length} reply, alerts ${capAlerts.sent}, digest ${capDigest.reason}`);
 
   // cleanup: restore pairing, remove test rows, un-apply the test job, reset notified_at
   await db.delete(messagesSent).where(or(eq(messagesSent.chatId, String(CHAT)), eq(messagesSent.chatId, String(STRANGER))));

@@ -2,8 +2,10 @@
  * Telegram send budget and bookkeeping shared by the alerts, the digest and the bot replies.
  * Every message to the paired chat is recorded in messages_sent; the daily cap, the
  * digest-sent-today check and the quiet-hours hold all read from that table. All times IST.
+ * The cap applies to what the bot sends on its own (alerts and the digest); replies to the
+ * user's own commands are recorded but never capped.
  */
-import { and, count, desc, eq, gte, isNull, ne } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import type { InlineKeyboard } from "grammy";
 import { getApi } from "@/bot/api";
 import { db } from "@/db";
@@ -11,6 +13,8 @@ import { jobs, messagesSent, type MessageKind, type Settings } from "@/db/schema
 import { istDayStart, istMinutes, timeToMinutes } from "./dates";
 
 export const DAILY_CAP = 25;
+/** Message kinds the daily cap counts. */
+export const CAPPED_KINDS: MessageKind[] = ["alert", "digest"];
 export const ALERTS_PER_TICK = 10;
 
 export function escapeHtml(s: string): string {
@@ -42,16 +46,16 @@ export function isAtOrAfter(time: string, now: Date = new Date()): boolean {
   return istMinutes(now) >= timeToMinutes(time);
 }
 
-/** Messages actually sent to this chat so far today (IST). Held alerts are not messages. */
+/** Capped messages (alerts and digests) sent to this chat so far today (IST). */
 export async function sentTodayCount(chatId: string, now: Date = new Date()): Promise<number> {
-  const rows = await db
-    .select({ id: messagesSent.id })
+  const [row] = await db
+    .select({ n: count() })
     .from(messagesSent)
-    .where(and(eq(messagesSent.chatId, chatId), ne(messagesSent.kind, "held"), gte(messagesSent.sentAt, istDayStart(now))));
-  return rows.length;
+    .where(and(eq(messagesSent.chatId, chatId), inArray(messagesSent.kind, CAPPED_KINDS), gte(messagesSent.sentAt, istDayStart(now))));
+  return row?.n ?? 0;
 }
 
-/** For the Settings page: today's sends, alerts still held (notified_at null), last digest. */
+/** For the Settings page: today's capped sends, alerts still held (notified_at null), last digest. */
 export async function telegramStatus(chatId: string, now: Date = new Date()): Promise<{ sent: number; held: number; lastDigest: Date | null }> {
   const [sent, [held], lastDigest] = await Promise.all([
     sentTodayCount(chatId, now),
@@ -101,15 +105,16 @@ export class SendBudget {
     return Math.max(0, DAILY_CAP - this.sentToday);
   }
 
-  /** Send one HTML message if the cap allows, record it, and return the Telegram message id. */
+  /** Send one HTML message (capped kinds only while the cap allows), record it, return the id. */
   async send(html: string, opts: SendOptions): Promise<SendResult> {
-    if (this.remaining <= 0) return { ok: false, reason: "cap" };
+    const capped = CAPPED_KINDS.includes(opts.kind);
+    if (capped && this.remaining <= 0) return { ok: false, reason: "cap" };
     const msg = await getApi().sendMessage(this.chatId, html, {
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
       reply_markup: opts.keyboard,
     });
-    this.sentToday++;
+    if (capped) this.sentToday++;
     await recordMessage({ chatId: this.chatId, kind: opts.kind, jobId: opts.jobId, sentAt: this.now });
     return { ok: true, messageId: msg.message_id };
   }

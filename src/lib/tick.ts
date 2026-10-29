@@ -22,7 +22,20 @@ export type TickOptions = {
   dryRun?: boolean;
   now?: Date;
   log?: (line: string) => void;
+  /** A tick_runs row already inserted by startTickRun(); it is completed instead of inserting one. */
+  runId?: number;
 };
+
+/** Insert the tick_runs row up front (async /api/tick responds with its id before the work runs). */
+export async function startTickRun(now: Date = new Date()): Promise<number> {
+  const [row] = await db.insert(tickRuns).values({ startedAt: now }).returning({ id: tickRuns.id });
+  return row.id;
+}
+
+/** Mark a pre-inserted run as finished with an error (used when runTick itself throws). */
+export async function failTickRun(runId: number, message: string): Promise<void> {
+  await db.update(tickRuns).set({ finishedAt: new Date(), errors: message }).where(eq(tickRuns.id, runId));
+}
 
 export type CompanyResult = {
   companyId: number;
@@ -281,14 +294,15 @@ export async function runTick(options: TickOptions = {}): Promise<TickResult> {
   const notified = await sendAlerts({ now, dryRun, log, errors });
 
   if (!dryRun) {
-    await db.insert(tickRuns).values({
-      startedAt: now,
+    const row = {
       finishedAt: new Date(),
       companiesFetched: results.length,
       jobsNew,
       jobsNotified: notified,
       errors: errors.length ? errors.join("\n") : null,
-    });
+    };
+    if (options.runId !== undefined) await db.update(tickRuns).set(row).where(eq(tickRuns.id, options.runId));
+    else await db.insert(tickRuns).values({ startedAt: now, ...row });
   }
 
   return {
