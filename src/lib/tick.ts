@@ -4,9 +4,10 @@
  */
 import { and, eq, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { companies, jobs, settings as settingsTable, tickRuns, type Company, type NewJob, type Settings } from "@/db/schema";
+import { companies, jobs, tickRuns, type Company, type NewJob, type Settings } from "@/db/schema";
 import { getSource, type NormalizedJob } from "@/sources";
 import { evaluate } from "./match";
+import { loadSettings } from "./settings";
 
 export const MAX_COMPANIES_PER_RUN = 40;
 export const FETCH_BATCH_SIZE = 8;
@@ -60,11 +61,7 @@ export type TickResult = {
   durationMs: number;
 };
 
-export async function loadSettings(): Promise<Settings> {
-  const [row] = await db.select().from(settingsTable).where(eq(settingsTable.id, 1));
-  if (!row) throw new Error("settings row id=1 is missing — run `pnpm seed`");
-  return row;
-}
+export { loadSettings } from "./settings";
 
 /** Step 1: active companies not in failure cooldown, least-recently fetched first, capped. */
 export async function selectCompaniesForTick(now: Date): Promise<Company[]> {
@@ -175,6 +172,7 @@ async function processCompany(
       matchedKeywords: ev.matchedKeywords,
       locationMatch: ev.locationMatch,
       status: ev.status,
+      ignoreReason: ev.ignoreReason,
       statusChangedAt: now,
       createdAt: now,
       updatedAt: now,

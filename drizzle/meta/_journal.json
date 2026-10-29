@@ -8,6 +8,13 @@
       "when": 1793257281245,
       "tag": "0000_stiff_mordo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793259232566,
+      "tag": "0001_lovely_exodus",
+      "breakpoints": true
     }
   ]
 }

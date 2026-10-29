@@ -27,6 +27,8 @@ export const locationMatchEnum = pgEnum("location_match", [
   "none",
 ]);
 
+export const ignoreReasonEnum = pgEnum("ignore_reason", ["title", "location", "age", "manual"]);
+
 export const jobStatusEnum = pgEnum("job_status", [
   "new",
   "ignored",
@@ -92,6 +94,7 @@ export const jobs = pgTable(
       .default(sql`'{}'::text[]`),
     locationMatch: locationMatchEnum("location_match").notNull().default("none"),
     status: jobStatusEnum("status").notNull().default("new"),
+    ignoreReason: ignoreReasonEnum("ignore_reason"),
     statusChangedAt: timestamp("status_changed_at", tz).notNull().defaultNow(),
     appliedAt: timestamp("applied_at", tz),
     referrerName: text("referrer_name"),
@@ -159,3 +162,4 @@ export type TickRun = typeof tickRuns.$inferSelect;
 export type JobStatus = (typeof jobStatusEnum.enumValues)[number];
 export type Ats = (typeof atsEnum.enumValues)[number];
 export type LocationMatch = (typeof locationMatchEnum.enumValues)[number];
+export type IgnoreReason = (typeof ignoreReasonEnum.enumValues)[number];

@@ -68,6 +68,7 @@ function normalise(j: z.infer<typeof LeverJob>): NormalizedJob {
 
 export const lever: SourceAdapter = {
   ats: "lever",
+  timeoutMs: 25_000,
   boardUrl: (slug) => `https://api.lever.co/v0/postings/${encodeURIComponent(slug)}?mode=json`,
   parseBoard(data) {
     const parsed = LeverBoard.safeParse(data);
@@ -75,6 +76,6 @@ export const lever: SourceAdapter = {
     return parsed.data.map(normalise);
   },
   async fetchBoard(slug) {
-    return lever.parseBoard(await fetchJson(lever.boardUrl(slug)));
+    return lever.parseBoard(await fetchJson(lever.boardUrl(slug), lever.timeoutMs));
   },
 };

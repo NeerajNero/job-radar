@@ -41,6 +41,7 @@ function normalise(j: z.infer<typeof AshbyJob>): NormalizedJob {
 
 export const ashby: SourceAdapter = {
   ats: "ashby",
+  timeoutMs: 12_000,
   boardUrl: (slug) =>
     `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(slug)}?includeCompensation=true`,
   parseBoard(data) {
@@ -49,6 +50,6 @@ export const ashby: SourceAdapter = {
     return parsed.data.jobs.filter((j) => j.isListed !== false).map(normalise);
   },
   async fetchBoard(slug) {
-    return ashby.parseBoard(await fetchJson(ashby.boardUrl(slug)));
+    return ashby.parseBoard(await fetchJson(ashby.boardUrl(slug), ashby.timeoutMs));
   },
 };

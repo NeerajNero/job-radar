@@ -15,7 +15,8 @@
     "companies:detect": "node --env-file=.env.local --import tsx scripts/companies-detect.ts",
     "companies:add": "node --env-file=.env.local --import tsx scripts/companies-add.ts",
     "tick:dry": "node --env-file=.env.local --import tsx scripts/tick-dry.ts",
-    "tick:local": "node --env-file=.env.local --import tsx scripts/tick-local.ts"
+    "tick:local": "node --env-file=.env.local --import tsx scripts/tick-local.ts",
+    "reevaluate": "node --env-file=.env.local --import tsx scripts/reevaluate.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

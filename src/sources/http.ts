@@ -1,5 +1,5 @@
 export const USER_AGENT = "job-radar/1.0 (personal use)";
-export const FETCH_TIMEOUT_MS = 12_000;
+export const DEFAULT_TIMEOUT_MS = 12_000;
 
 export class SourceError extends Error {
   constructor(message: string, readonly status?: number) {
@@ -15,9 +15,9 @@ export type JsonResponse = { status: number; data: unknown };
  * Resolves for any HTTP status (the caller decides); rejects with SourceError
  * on timeout, network failure or a non-JSON body.
  */
-export async function getJson(url: string): Promise<JsonResponse> {
+export async function getJson(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<JsonResponse> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
@@ -39,7 +39,7 @@ export async function getJson(url: string): Promise<JsonResponse> {
   } catch (err) {
     if (err instanceof SourceError) throw err;
     if (err instanceof Error && err.name === "AbortError") {
-      throw new SourceError(`timeout after ${FETCH_TIMEOUT_MS / 1000}s`);
+      throw new SourceError(`timeout after ${timeoutMs / 1000}s`);
     }
     throw new SourceError(err instanceof Error ? err.message : String(err));
   } finally {
@@ -48,8 +48,8 @@ export async function getJson(url: string): Promise<JsonResponse> {
 }
 
 /** getJson that additionally rejects on a non-2xx status. */
-export async function fetchJson(url: string): Promise<unknown> {
-  const { status, data } = await getJson(url);
+export async function fetchJson(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<unknown> {
+  const { status, data } = await getJson(url, timeoutMs);
   if (status < 200 || status >= 300) throw new SourceError(`HTTP ${status}`, status);
   return data;
 }

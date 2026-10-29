@@ -1,7 +1,7 @@
 /**
  * Matching and scoring. Pure functions, no I/O. See CLAUDE.md "Matching and scoring".
  */
-import type { LocationMatch, Settings } from "@/db/schema";
+import type { IgnoreReason, LocationMatch, Settings } from "@/db/schema";
 
 export type MatchSettings = Pick<
   Settings,
@@ -30,6 +30,8 @@ export type Evaluation = {
   matchedKeywords: string[];
   locationMatch: LocationMatch;
   status: "new" | "ignored";
+  /** Why a non-match was ignored (title > location > age precedence); null for matches. */
+  ignoreReason: IgnoreReason | null;
   /** Human-readable reasons a job was rejected (empty for matches). */
   reasons: string[];
 };
@@ -140,14 +142,22 @@ export function evaluate(
   firstSeenAt: Date = now,
 ): Evaluation {
   const reasons: string[] = [];
+  let ignoreReason: IgnoreReason | null = null;
   const title = matchTitle(job.title, settings.titleInclude, settings.titleExclude);
   if (title.includeHits.length === 0) reasons.push("no include term");
   if (title.excludeHits.length > 0) reasons.push(`excluded: ${title.excludeHits.join(", ")}`);
+  if (!title.ok) ignoreReason = "title";
 
   const locationMatch = matchLocation(job, settings);
-  if (locationMatch === "none") reasons.push("location");
+  if (locationMatch === "none") {
+    reasons.push("location");
+    ignoreReason ??= "location";
+  }
 
-  if (!isFresh(job.postedAt, firstSeenAt, settings.maxAgeDays, now)) reasons.push("stale");
+  if (!isFresh(job.postedAt, firstSeenAt, settings.maxAgeDays, now)) {
+    reasons.push("stale");
+    ignoreReason ??= "age";
+  }
 
   const { score: s, boostHits } = score({
     title: job.title,
@@ -165,6 +175,7 @@ export function evaluate(
     matchedKeywords,
     locationMatch,
     status: isMatch ? "new" : "ignored",
+    ignoreReason,
     reasons,
   };
 }

@@ -14,6 +14,8 @@ export type NormalizedJob = {
 
 export type SourceAdapter = {
   ats: Ats;
+  /** Per-source fetch timeout; Lever is slow for large boards. */
+  timeoutMs: number;
   /** The public JSON endpoint for a board slug. */
   boardUrl(slug: string): string;
   /** Validate a raw JSON body and normalise it. Throws on an unexpected shape. */

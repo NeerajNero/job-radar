@@ -36,6 +36,7 @@ function normalise(j: z.infer<typeof GreenhouseJob>): NormalizedJob {
 
 export const greenhouse: SourceAdapter = {
   ats: "greenhouse",
+  timeoutMs: 12_000,
   boardUrl: (slug) => `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(slug)}/jobs?content=true`,
   parseBoard(data) {
     const parsed = GreenhouseBoard.safeParse(data);
@@ -43,6 +44,6 @@ export const greenhouse: SourceAdapter = {
     return parsed.data.jobs.map(normalise);
   },
   async fetchBoard(slug) {
-    return greenhouse.parseBoard(await fetchJson(greenhouse.boardUrl(slug)));
+    return greenhouse.parseBoard(await fetchJson(greenhouse.boardUrl(slug), greenhouse.timeoutMs));
   },
 };
